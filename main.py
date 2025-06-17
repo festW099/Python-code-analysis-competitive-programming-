@@ -4,8 +4,15 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional, Any
+
+# Библиотеки для вывода
 import colorama
 from colorama import Fore, Style
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+import plotext as plt
 
 colorama.init()
 
@@ -78,14 +85,11 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
         )
         self.nested_loops = 0
         self.recursion_depth = 0
-        
         if not node.returns and all(a.annotation is None for a in node.args.args):
             self.results[node.name].style_issues.append(
                 f"Строка {node.lineno}: Отсутствуют аннотации типов"
             )
-        
         self.generic_visit(node)
-        
         self._update_complexity(node.name)
         self._detect_techniques(node.name)
         self.current_function = None
@@ -98,7 +102,6 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
                         self.results[self.current_function].time_complexity = "O(n)"
                     elif len(node.iter.args) == 2:
                         self.results[self.current_function].time_complexity = "O(n)"
-                    
                     if self.nested_loops > 1:
                         self.results[self.current_function].time_complexity = f"O(n^{self.nested_loops})"
 
@@ -122,16 +125,13 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
         if not self.current_function:
             self.generic_visit(node)
             return
-
         if isinstance(node.func, ast.Name) and node.func.id == self.current_function:
             self.has_recursion = True
             self.recursion_depth += 1
             self.results[self.current_function].techniques.add("Рекурсия")
-
         self._detect_algorithms(node)
         self._detect_data_structures(node)
         self._check_io_optimization(node)
-
         self.generic_visit(node)
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
@@ -185,24 +185,20 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
             'permutations': "Перестановки",
             'accumulate': "Префиксные суммы"
         }
-
         try:
             if isinstance(node.func, ast.Name):
                 if node.func.id in func_mapping:
                     self.results[self.current_function].algorithms.add(func_mapping[node.func.id])
                     if func_mapping[node.func.id] == "Динамическое программирование":
                         self.has_dp = True
-            
             elif isinstance(node.func, ast.Attribute):
                 attr_name = node.func.attr
                 if attr_name in func_mapping:
                     self.results[self.current_function].algorithms.add(func_mapping[attr_name])
-                
                 if (isinstance(node.func.value, ast.Name) and node.func.value.id in ('itertools', 'heapq')):
                     full_name = f"{node.func.value.id}.{node.func.attr}"
                     if full_name in func_mapping:
                         self.results[self.current_function].algorithms.add(func_mapping[full_name])
-                        
         except AttributeError:
             pass
 
@@ -219,12 +215,10 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
             'popleft': 'deque',
             'appendleft': 'deque'
         }
-
         if isinstance(node.func, ast.Attribute):
             if node.func.attr in ds_mapping:
                 ds = ds_mapping[node.func.attr]
                 self.results[self.current_function].data_structures.add(ds)
-                
                 if ds == 'list' and node.func.attr == 'insert':
                     self.results[self.current_function].performance_tips.append(
                         f"Строка {node.lineno}: list.insert имеет O(n) сложность, используйте deque для частых вставок"
@@ -333,18 +327,14 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
 
     def _update_complexity(self, func_name: str) -> None:
         result = self.results[func_name]
-        
         if self.nested_loops > 1:
             result.time_complexity = f"O(n^{self.nested_loops})"
-        
         if self.has_recursion:
             result.time_complexity = f"O(2^n)" if self.recursion_depth > 3 else "O(n)"
             result.space_complexity = f"O(n)"
-        
         if self.has_dp:
             result.time_complexity = "O(n)"
             result.space_complexity = "O(n)"
-        
         if self.list_comprehensions:
             result.time_complexity = "O(n)"
             if self.nested_loops > 0:
@@ -352,24 +342,18 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
 
     def _detect_techniques(self, func_name: str) -> None:
         result = self.results[func_name]
-        
         if "Бинарный поиск" in result.algorithms:
             result.techniques.add("Двоичный поиск")
-        
         if any(ds in {'heapq', 'deque'} for ds in result.data_structures):
             result.techniques.add("Жадные алгоритмы")
-        
         if self.has_recursion and self.has_dp:
             result.techniques.add("Динамическое программирование с мемоизацией")
         elif self.has_recursion:
             result.techniques.add("Рекурсивный подход")
-        
         if any(tc.startswith("O(n^2)") for tc in [result.time_complexity]):
             result.techniques.add("Полный перебор")
-        
         if "dict" in result.data_structures and result.time_complexity == "O(n)":
             result.techniques.add("Хэширование")
-        
         if "itertools" in str(result.algorithms):
             result.techniques.add("Комбинаторные методы")
 
@@ -377,16 +361,12 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
         for func, result in self.results.items():
             if result.time_complexity.startswith("O(n^2)"):
                 result.optimizations.append("Можно оптимизировать до O(n log n) с помощью сортировки")
-            
             if "Рекурсия" in result.techniques and self.recursion_depth > 3:
                 result.issues.append("Глубокая рекурсия может вызвать переполнение стека - используйте итеративный подход")
-            
             if "list" in result.data_structures and "count" in str(result.algorithms):
                 result.optimizations.append("Для частых поисков используйте set вместо list")
-            
             if "dict" in result.data_structures and "keys" in str(result.algorithms):
                 result.performance_tips.append("Для проверки наличия ключа используйте 'key in dict' вместо 'key in dict.keys()'")
-            
             if "list" in result.data_structures and "append" in str(result.algorithms):
                 result.performance_tips.append("Для частых добавлений в конец списка используйте collections.deque")
 
@@ -428,56 +408,117 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
             performance_tips=[]
         )
 
+    def _get_color_tag(self, complexity: str) -> str:
+        if complexity in {"O(1)", "O(log n)"}:
+            return "green"
+        elif complexity in {"O(n)", "O(n log n)"}:
+            return "yellow"
+        else:
+            return "red"
+
+    def _generate_complexity_chart(self, complexity: str) -> str:
+        n = list(range(1, 11))
+        y = [1] * len(n)
+
+        if "n^2" in complexity:
+            y = [x ** 2 for x in n]
+        elif "n log n" in complexity:
+            import math
+            y = [x * math.log(x) if x > 0 else 0 for x in n]
+        elif "n" in complexity:
+            y = n[:]
+        elif "log n" in complexity:
+            import math
+            y = [math.log(x) if x > 0 else 0 for x in n]
+
+        plt.plot(n, y, label=complexity)
+        plt.title("Оценка временной сложности")
+        plt.xlabel("n")
+        plt.ylabel("T(n)")
+        chart = plt.build()
+        return chart
+
+    def _create_table(self, title: str, items: List[str]) -> Table:
+        table = Table(title=f"[bold magenta]{title}[/]", show_header=True, header_style="magenta")
+        table.add_column("№", justify="right", style="cyan", no_wrap=True)
+        table.add_column("Элемент", style="green")
+        for idx, item in enumerate(items, 1):
+            table.add_row(str(idx), item)
+        return table
+
     def _generate_report(self) -> str:
+        console = Console(width=100)
         report = []
-        report.append(f"{COLORS['info']}=== АНАЛИЗ PYTHON КОДА ДЛЯ СПОРТИВНОГО ПРОГРАММИРОВАНИЯ ==={COLORS['reset']}")
-        
+
+        # Заголовок
+        report.append(Panel("[bold cyan]=== АНАЛИЗ PYTHON КОДА ДЛЯ СПОРТИВНОГО ПРОГРАММИРОВАНИЯ ===[/]", expand=False))
+
         for func, result in self.results.items():
-            report.append(f"\n{COLORS['highlight']}Функция: {func}{COLORS['reset']}" if func != 'global' else f"\n{COLORS['highlight']}Глобальный анализ{COLORS['reset']}")
+            title = f"[bold yellow]Функция: {func}[/]" if func != 'global' else "[bold yellow]Глобальный анализ[/]"
+            report.append(Panel(title, border_style="blue"))
+
+            # Сложность
+            complexity_text = Text.assemble(
+                ("Сложность:\n", "bold"),
+                ("- Временная: ", ""), (result.time_complexity, self._get_color_tag(result.time_complexity)), "\n",
+                ("- Пространственная: ", ""), (result.space_complexity, self._get_color_tag(result.space_complexity))
+            )
+            report.append(complexity_text)
+
+            # График
+            # На данный момент отсутствует
             
-            report.append(f"\n{COLORS['info']}Сложность:{COLORS['reset']}")
-            report.append(f"- Временная: {self._color_complexity(result.time_complexity)}")
-            report.append(f"- Пространственная: {self._color_complexity(result.space_complexity)}")
-            
-            if result.techniques:
-                report.append(f"\n{COLORS['info']}Методы решения:{COLORS['reset']}")
-                for tech in result.techniques:
-                    report.append(f"- {COLORS['highlight']}{tech}{COLORS['reset']}")
-            
+
+            # Использованные элементы
             items = []
             for algo in result.algorithms:
-                items.append(f"Алгоритм: {COLORS['info']}{algo}{COLORS['reset']}")
+                items.append(f"Алгоритм: {algo}")
             for ds in result.data_structures:
-                items.append(f"Структура данных: {COLORS['info']}{ds}{COLORS['reset']}")
+                items.append(f"Структура данных: {ds}")
             if items:
-                report.append(f"\n{COLORS['info']}Использовано:{COLORS['reset']}")
-                report.extend(items)
-            
-            if result.potential_bugs:
-                report.append(f"\n{COLORS['error']}Потенциальные ошибки:{COLORS['reset']}")
-                for bug in result.potential_bugs:
-                    report.append(f"- ⚠ {bug}")
-            
-            if result.performance_tips:
-                report.append(f"\n{COLORS['success']}Советы по производительности:{COLORS['reset']}")
-                for tip in result.performance_tips:
-                    report.append(f"- ✓ {tip}")
-            
-            if result.optimizations:
-                report.append(f"\n{COLORS['warning']}Возможные оптимизации:{COLORS['reset']}")
-                for opt in result.optimizations:
-                    report.append(f"- ✎ {opt}")
-            
-            if result.style_issues:
-                report.append(f"\n{COLORS['warning']}Проблемы стиля:{COLORS['reset']}")
-                for issue in result.style_issues:
-                    report.append(f"- ✎ {issue}")
+                table = self._create_table("Использовано", items)
+                report.append(table)
 
-        report.append(f"\n{COLORS['info']}=== ОБЩИЕ РЕКОМЕНДАЦИИ ДЛЯ PYTHON ==={COLORS['reset']}")
-        tips = [
+            # Ошибки
+            if result.potential_bugs:
+                bugs_table = Table(title="[red]⚠️ Потенциальные ошибки[/]", show_header=False, header_style="red")
+                bugs_table.add_column("Ошибка", style="red")
+                for bug in result.potential_bugs:
+                    bugs_table.add_row(bug)
+                report.append(bugs_table)
+
+            # Советы по производительности
+            if result.performance_tips:
+                tips_table = Table(title="[green]✓ Советы по производительности[/]", show_header=False, header_style="green")
+                tips_table.add_column("Совет", style="green")
+                for tip in result.performance_tips:
+                    tips_table.add_row(tip)
+                report.append(tips_table)
+
+            # Рекомендации
+            if result.optimizations:
+                opt_table = Table(title="[yellow]✎ Возможные оптимизации[/]", show_header=False, header_style="yellow")
+                opt_table.add_column("Рекомендация", style="yellow")
+                for opt in result.optimizations:
+                    opt_table.add_row(opt)
+                report.append(opt_table)
+
+            # Проблемы стиля
+            if result.style_issues:
+                style_table = Table(title="[yellow]✎ Проблемы стиля[/]", show_header=False, header_style="yellow")
+                style_table.add_column("Проблема", style="yellow")
+                for issue in result.style_issues:
+                    style_table.add_row(issue)
+                report.append(style_table)
+
+            # Разделитель
+            report.append("\n" + "-" * 80 + "\n")
+
+        # Общие рекомендации
+        general_tips = [
             "Для задач с n > 1e5 используйте алгоритмы O(n) или O(n log n)",
             "Используйте sys.stdin.readline() для быстрого ввода",
-            "Избегайте глубокой рекурсии - используйте итеративные решения",
+            "Избегайте глубокой рекурсии - иАспользуйте итеративные решения",
             "Для частых поисков используйте set() или dict() вместо списков",
             "Выносите инварианты циклов за их пределы",
             "Используйте collections.deque для частых операций с обоих концов",
@@ -486,27 +527,23 @@ class PythonCodeAnalyzer(ast.NodeVisitor):
             "Для работы с большими числами используйте модуль math",
             "Используйте генераторы для экономии памяти"
         ]
-        
-        for i, tip in enumerate(tips, 1):
-            report.append(f"{i:2}. {tip}")
+        tips_table = self._create_table("Общие рекомендации", general_tips)
+        report.append(Panel(tips_table, title="[bold blue]💡 Общие рекомендации[/]", expand=False))
 
-        return '\n'.join(report)
+        # Собрать финальный отчет
+        output = ""
+        for part in report:
+            with console.capture() as cap:
+                console.print(part)
+            output += cap.get()
 
-    def _color_complexity(self, complexity: str) -> str:
-        if complexity in {"O(1)", "O(log n)"}:
-            return f"{COLORS['success']}{complexity}{COLORS['reset']}"
-        elif complexity in {"O(n)", "O(n log n)"}:
-            return f"{COLORS['warning']}{complexity}{COLORS['reset']}"
-        else:
-            return f"{COLORS['error']}{complexity}{COLORS['reset']}"
+        return output
 
 def analyze_code(file_path: Optional[str] = None, code: Optional[str] = None) -> str:
     analyzer = PythonCodeAnalyzer()
-    
     if file_path:
         with open(file_path, 'r', encoding='utf-8') as f:
             code = f.read()
-    
     if code:
         return analyzer.analyze(code)
     else:
